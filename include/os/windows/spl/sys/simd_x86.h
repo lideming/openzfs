@@ -447,6 +447,30 @@ zfs_pclmulqdq_available(void)
 	return (__cpuid_has_pclmulqdq());
 }
 
+
+/*
+ * Check if VAES instruction set is available.
+ *
+ * The Windows CPUID helper does not currently expose VAES/VPCLMULQDQ.
+ * Return false so code compiled with the common GCM AVX dispatcher can
+ * still build; the AVX2-VAES path remains disabled on Windows until
+ * those CPUID bits are wired up.
+ */
+static inline boolean_t
+zfs_vaes_available(void)
+{
+	return (B_FALSE);
+}
+
+/*
+ * Check if VPCLMULQDQ instruction set is available.
+ */
+static inline boolean_t
+zfs_vpclmulqdq_available(void)
+{
+	return (B_FALSE);
+}
+
 /*
  * Check if MOVBE instruction is available
  */

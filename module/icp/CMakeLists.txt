@@ -59,4 +59,13 @@ endif()
 
 
 target_link_libraries(icpkern PRIVATE splkern)
+
+# Windows kernel ICP needs zfs_config.h for HAVE_AES/HAVE_PCLMULQDQ/HAVE_AVX
+# feature macros.  Userland libicp already force-includes this header; without
+# the same include here, the kernel AES-NI/PCLMUL implementations are compiled
+# out even when the guest CPU exposes the instructions.
+if (WIN32)
+  target_compile_options(icpkern PRIVATE
+    "/FI${CMAKE_SOURCE_DIR}/include/os/windows/zfs/zfs_config.h")
+endif()
 target_include_directories(icpkern BEFORE PUBLIC "include")
