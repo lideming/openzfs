@@ -1102,7 +1102,7 @@ static inline void GHASH_AVX(gcm_ctx_t *ctx, const uint8_t *in, size_t len)
 
 typedef size_t aesni_gcm_encrypt_impl(const uint8_t *, uint8_t *,
     size_t, const void *, uint64_t *, const uint64_t *Htable, uint64_t *);
-extern size_t aesni_gcm_encrypt(const uint8_t *, uint8_t *, size_t,
+extern size_t ASMABI aesni_gcm_encrypt(const uint8_t *, uint8_t *, size_t,
     const void *, uint64_t *, uint64_t *);
 #if CAN_USE_GCM_ASM >= 2
 extern void aes_gcm_enc_update_vaes_avx2(const uint8_t *in,
@@ -1112,7 +1112,7 @@ extern void aes_gcm_enc_update_vaes_avx2(const uint8_t *in,
 
 typedef size_t aesni_gcm_decrypt_impl(const uint8_t *, uint8_t *,
     size_t, const void *, uint64_t *, const uint64_t *Htable, uint64_t *);
-extern size_t aesni_gcm_decrypt(const uint8_t *, uint8_t *, size_t,
+extern size_t ASMABI aesni_gcm_decrypt(const uint8_t *, uint8_t *, size_t,
     const void *, uint64_t *, uint64_t *);
 #if CAN_USE_GCM_ASM >= 2
 extern void aes_gcm_dec_update_vaes_avx2(const uint8_t *in,

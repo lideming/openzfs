@@ -29,7 +29,11 @@
 #include <sys/simd.h>
 
 /* Holds the flags for KeSaveExtendedProcessorState() in simd.h */
+#if defined(__x86_64__) || defined(__amd64__) || defined(_M_AMD64)
+uint32_t kfpu_state = (uint32_t)(XSTATE_MASK_LEGACY | XSTATE_MASK_AVX);
+#else
 uint32_t kfpu_state = 0;
+#endif
 
 uint32_t
 cpu_number(void)
