@@ -5726,6 +5726,94 @@ user_fs_request(PDEVICE_OBJECT DeviceObject, PIRP *PIrp,
 	return (Status);
 }
 
+
+static NTSTATUS
+query_directory_exact_name(PIRP Irp, PIO_STACK_LOCATION IrpSp,
+    vnode_t *dvp, zfs_ccb_t *zccb, zfsvfs_t *zfsvfs, void *SystemBuffer)
+{
+	NTSTATUS Status = STATUS_NO_SUCH_FILE;
+	znode_t *zp = NULL;
+	char lookup_name[MAXNAMELEN];
+	char realname[MAXNAMELEN];
+	ULONG outlen = 0;
+	int error;
+	int flags = 0;
+	int direntflags = 0;
+	int ret;
+	struct componentname cn = { 0 };
+	emitdir_ptr_t ctx = { 0 };
+
+	if (IrpSp->Parameters.QueryDirectory.FileName == NULL ||
+	    IrpSp->Parameters.QueryDirectory.FileName->Buffer == NULL ||
+	    IrpSp->Parameters.QueryDirectory.FileName->Length == 0)
+		return (STATUS_INVALID_PARAMETER);
+
+	if (SystemBuffer == NULL ||
+	    IrpSp->Parameters.QueryDirectory.Length <= 0)
+		return (STATUS_INSUFFICIENT_RESOURCES);
+
+	error = RtlUnicodeToUTF8N(lookup_name, sizeof (lookup_name) - 1,
+	    &outlen, IrpSp->Parameters.QueryDirectory.FileName->Buffer,
+	    IrpSp->Parameters.QueryDirectory.FileName->Length);
+	if (!NT_SUCCESS(error) && error != STATUS_SOME_NOT_MAPPED)
+		return (STATUS_OBJECT_NAME_INVALID);
+	lookup_name[outlen] = 0;
+	strlcpy(realname, lookup_name, sizeof (realname));
+
+	if (!(zfsvfs->z_case == ZFS_CASE_SENSITIVE))
+		flags |= FIGNORECASE;
+
+	cn.cn_nameiop = LOOKUP;
+	cn.cn_flags = ISLASTCN;
+	cn.cn_namelen = strlen(realname);
+	cn.cn_nameptr = realname;
+	cn.cn_pnlen = sizeof (realname);
+	cn.cn_pnbuf = realname;
+
+	error = zfs_lookup(VTOZ(dvp), realname, &zp, flags,
+	    &zccb->cred, &direntflags, &cn);
+	if (error != 0) {
+		if (error == ENOENT)
+			zccb->dir_eof = 1;
+		Status = (error == ENOENT) ? STATUS_NO_SUCH_FILE :
+		    zfs_error_to_ntstatus(error);
+		goto out;
+	}
+
+	ctx.bufsize = IrpSp->Parameters.QueryDirectory.Length;
+	ctx.alloc_buf = SystemBuffer;
+	ctx.bufptr = ctx.alloc_buf;
+	ctx.outcount = 0;
+	ctx.next_offset = NULL;
+	ctx.last_alignment = 0;
+	ctx.offset = zccb->dirlist_index;
+	ctx.numdirent = 0;
+	ctx.dirlisttype = IrpSp->Parameters.QueryDirectory.FileInformationClass;
+
+	ret = zfs_readdir_emitdir(zfsvfs, realname, &ctx, zccb, zp->z_id);
+	if (ret == ENOSPC) {
+		Irp->IoStatus.Information = 0;
+		Status = STATUS_BUFFER_OVERFLOW;
+		goto out;
+	}
+	if (ret != 0) {
+		Irp->IoStatus.Information = 0;
+		Status = zfs_error_to_ntstatus(ret);
+		goto out;
+	}
+
+	zfs_readdir_complete(&ctx);
+	Irp->IoStatus.Information = ctx.outcount;
+	zccb->dir_eof = 1;
+	zccb->dirlist_index = ctx.offset;
+	Status = STATUS_SUCCESS;
+
+out:
+	if (zp != NULL)
+		VN_RELE(ZTOV(zp));
+	return (Status);
+}
+
 NTSTATUS
 query_directory_FileFullDirectoryInformation(PDEVICE_OBJECT DeviceObject,
     PIRP Irp, PIO_STACK_LOCATION IrpSp)
@@ -5885,6 +5973,16 @@ query_directory_FileFullDirectoryInformation(PDEVICE_OBJECT DeviceObject,
 	} else {
 		if (!flag_restart_scan)
 			initial = B_FALSE;
+	}
+
+	if (zccb->searchname.Buffer != NULL &&
+	    zccb->searchname.Length > 0 &&
+	    !zccb->ContainsWildCards &&
+	    zccb->dirlist_index == 0) {
+		Status = query_directory_exact_name(Irp, IrpSp, dvp, zccb,
+		    zfsvfs, SystemBuffer);
+		UnMapUserBuffer(mdl);
+		return (Status);
 	}
 
 	emitdir_ptr_t ctx;
